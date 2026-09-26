@@ -7,3 +7,4 @@ outputs/
 .venv/
 data/out/
 *.log
+logs/
