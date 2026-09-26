@@ -6,3 +6,4 @@ checkpoints/
 outputs/
 .venv/
 data/out/
+*.log
