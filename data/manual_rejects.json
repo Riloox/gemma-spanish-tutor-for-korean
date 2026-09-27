@@ -1,0 +1,9 @@
+{
+  "_comment": "Answers rejected by hand review (scripts/sample_explanations.py). qid -> what's wrong. Read by build_explanations.py --stage filter.",
+  "63-506": "calls l a vowel; explains an r in 'biblioteca', which has none",
+  "34-273": "treats 'el más delante' as grammatical, invents 'más delanteras'",
+  "33-265": "says mío/mía always needs el/la before the noun (una amiga mía)",
+  "65-521": "says 'un' sounds between 운 and 안; it is just [un]",
+  "0-1": "wrong reason for the accent in habláis (it's an aguda ending in -s)",
+  "46-371": "invents a Korean title for Club de Cuervos"
+}

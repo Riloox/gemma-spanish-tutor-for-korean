@@ -30,6 +30,7 @@ QUESTIONS_PER_TOPIC = 8
 RAW_Q = OUT_DIR / "raw_questions.jsonl"
 RAW_A = OUT_DIR / "raw_answers.jsonl"
 RAW_R = OUT_DIR / "raw_reviews.jsonl"
+MANUAL_REJECTS = OUT_DIR.parent / "manual_rejects.json"  # found by hand review; committed, unlike data/out
 EVAL_FILE = OUT_DIR.parent.parent / "eval" / "eval_set.jsonl"
 
 QUESTION_PROMPT = """한국인 스페인어 학습자가 실제로 물어볼 법한 질문을 {n}개 만들어 주세요.
@@ -222,9 +223,10 @@ def reject_reason(row):
 def stage_filter():
     rows = [{**r, "answer": clean(r["answer"])} for r in load_jsonl(RAW_A)]
     reviews = {r["qid"]: r["errors"] for r in load_jsonl(RAW_R)}
+    manual = json.loads(MANUAL_REJECTS.read_text(encoding="utf-8")) if MANUAL_REJECTS.exists() else {}
     good, bad = [], []
     for r in rows:
-        why = reject_reason(r)
+        why = f"hand review: {manual[r['qid']]}" if r["qid"] in manual else reject_reason(r)
         if not why:
             errors = reviews.get(r["qid"], "missing")
             if errors == "missing":
@@ -242,7 +244,8 @@ def stage_filter():
     write_jsonl(bad, OUT_DIR / "rejected_explanations.jsonl")
     reasons = {}
     for b in bad:
-        reasons[b["reject_reason"]] = reasons.get(b["reject_reason"], 0) + 1
+        why = "hand review" if b["reject_reason"].startswith("hand review") else b["reject_reason"]
+        reasons[why] = reasons.get(why, 0) + 1
     print(f"  kept {len(good)}/{len(rows)}; rejected: {reasons}")
 
 
