@@ -12,8 +12,8 @@ English habits interfering. See [docs/02-model-spec.md](docs/02-model-spec.md).
 Each step has a doc that explains the concepts before the code.
 
 - [x] **Step 1: Baseline.** Measured 5 models; picked `gemma4:e2b` (48/57, 106 tok/s). → [docs/03](docs/03-step1-baseline.md)
-- [ ] **Step 2: Training data.** ✅ 2a conjugations (2,299) and ✅ 2b corrections (924), both correct by construction. ⏳ 2c explanations distilled from local `gemma4:26b` (run `overnight.bat`). → [docs/04](docs/04-step2-training-data.md)
-- [ ] **Step 3: SFT with QLoRA.** Teach the chosen base model the tutor behavior on your GPU.
+- [x] **Step 2: Training data.** 2,299 conjugations + 924 corrections (correct by construction) + 634 explanations distilled from local `gemma4:26b` (56/57 on the eval). Hand review: ~10–20% of explanations have a wrong claim. → [docs/04](docs/04-step2-training-data.md)
+- [ ] **Step 3: SFT with QLoRA.** ⏳ `uv run python -m train.sft` on `gemma-4-E2B-it`: 24M trainable params, ~8 GB VRAM, ~1 h. → [docs/05](docs/05-step3-sft.md)
 - [ ] **Step 4: Ship to Ollama.** Merge → GGUF → quantize → `Modelfile` → `ollama create`.
 - [ ] **Step 5: RL (GRPO).** Reward correct conjugations and corrections with automatic verifiers.
 - [ ] **Step 6: Re-evaluate.** Beat the baseline, compare against a bigger model.
@@ -27,6 +27,10 @@ docs/                  concept explainers + step guides
 prompts/               the tutor system prompt (used in eval and later in the Modelfile)
 eval/eval_set.jsonl    57 test cases, each tied to a pain point. Never train on these.
 eval/run_eval.py       runs the eval against Ollama models, writes results/<timestamp>/report.md
+data/                  Step 2 data builders; output goes to data/out/ (not committed)
+data/manual_rejects.json  teacher answers rejected by hand review
+scripts/               overnight job, hand-review sampler
+train/sft.py           Step 3 QLoRA fine-tune, writes outputs/sft/
 ```
 
 ## Hardware this was planned for
