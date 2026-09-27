@@ -13,7 +13,7 @@ Each step has a doc that explains the concepts before the code.
 
 - [x] **Step 1: Baseline.** Measured 5 models; picked `gemma4:e2b` (48/57, 106 tok/s). → [docs/03](docs/03-step1-baseline.md)
 - [x] **Step 2: Training data.** 2,299 conjugations + 924 corrections (correct by construction) + 634 explanations distilled from local `gemma4:26b` (56/57 on the eval). Hand review: ~10–20% of explanations have a wrong claim. → [docs/04](docs/04-step2-training-data.md)
-- [ ] **Step 3: SFT with QLoRA.** ⏳ `uv run python -m train.sft` on `gemma-4-E2B-it`: 24M trainable params, ~8 GB VRAM, ~1 h. → [docs/05](docs/05-step3-sft.md)
+- [x] **Step 3: SFT with QLoRA.** First adapter trained (78 min, 8 GB VRAM). It learned the format and "답만"; it also invents errors in correct sentences, so it needs the real eval and probably more `corr_ok` data. → [docs/05](docs/05-step3-sft.md)
 - [ ] **Step 4: Ship to Ollama.** Merge → GGUF → quantize → `Modelfile` → `ollama create`.
 - [ ] **Step 5: RL (GRPO).** Reward correct conjugations and corrections with automatic verifiers.
 - [ ] **Step 6: Re-evaluate.** Beat the baseline, compare against a bigger model.
