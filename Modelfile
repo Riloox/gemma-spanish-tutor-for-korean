@@ -1,0 +1,14 @@
+# Step 4: the fine-tuned tutor in Ollama.
+#   uv run python -m train.merge                                        # adapter + base -> outputs/merged
+#   python <llama.cpp>/convert_hf_to_gguf.py outputs/merged --outtype bf16 --outfile outputs/gemma4-tutor-bf16.gguf
+#   <llama.cpp>/llama-quantize outputs/gemma4-tutor-bf16.gguf outputs/gemma4-tutor-q4_k_m.gguf Q4_K_M
+#   ollama create gemma4-tutor -f Modelfile
+# Text only: llama.cpp's converter leaves out the vision/audio encoders that the stock gemma4:e2b bundles.
+FROM ./outputs/gemma4-tutor-q4_k_m.gguf
+
+# Same prompt handling and sampling defaults as the stock gemma4:e2b (`ollama show --modelfile gemma4:e2b`)
+RENDERER gemma4
+PARSER gemma4
+PARAMETER temperature 1
+PARAMETER top_k 64
+PARAMETER top_p 0.95
