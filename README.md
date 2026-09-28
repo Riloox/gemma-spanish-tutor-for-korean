@@ -33,6 +33,9 @@ scripts/               overnight job, hand-review sampler
 train/sft.py           Step 3 QLoRA fine-tune, writes outputs/sft/
 train/merge.py         Step 4 adapter + base -> outputs/merged (full HF checkpoint)
 train/ship.py          Step 4 in one command: merge -> GGUF -> Q4_K_M -> ollama create
+data/build_rl.py       Step 5 RL prompts with gold facts for the verifiers -> data/out/rl_prompts.jsonl
+train/rewards.py       Step 5 verifiers (reuse the eval graders)
+train/grpo.py          Step 5 GRPO on top of the v2 adapter, writes outputs/grpo/
 Modelfile              Step 4 Ollama import of the quantized GGUF
 ```
 
