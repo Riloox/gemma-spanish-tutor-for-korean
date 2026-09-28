@@ -81,7 +81,44 @@ def contains_phrase(text, phrase):
     return re.search(rf"(?<!{LATIN_CHAR}){re.escape(normalize(phrase))}(?!{LATIN_CHAR})", text) is not None
 
 
-def score_check(answer, check):
+# For already-correct sentences (check values = [the learner's sentence]). Grades the *verdict*:
+#   - the answer says it's right: an affirmation in its first line, or "틀린/고칠 곳(부분·데)이 없어요" anywhere,
+#     and no hedge like "거의 다 맞았어요 / 고쳐 볼게요" in the first line;
+#   - nothing is actually changed: every "고친 문장:" line is the learner's sentence, and no 'x' → 'y' with x != y.
+# Filling the 4-part template with the unchanged sentence is fine; inventing a fix is not.
+AFFIRM = ["맞아요", "맞습니다", "맞는 문장", "맞고", "맞게 썼", "완벽", "자연스러운 문장", "자연스러워요"]
+NO_ERROR = re.compile(r"(틀린|고칠)\s*(곳|부분|데)[은이가]?\s*(하나도\s*|전혀\s*)?없")
+DENY = ["거의", "고쳐", "고치면", "틀렸", "안 맞", "맞지 않", "어색"]
+FIX_LINE = re.compile(r"고친 (?:문장|글)\s*:\s*(.+)")
+ARROW = re.compile(r"'([^'\n]+)'\s*(?:→|\$?\\rightarrow\$?)\s*'([^'\n]+)'")
+
+
+def sentence_key(s):
+    return re.sub(r"[\"'“”«».,!?¿¡\s]", "", normalize(s))
+
+
+def says_correct(answer, sentence):
+    first = normalize(answer.strip().split("\n")[0])
+    affirms = any(a in first for a in AFFIRM) or NO_ERROR.search(normalize(answer))
+    if not affirms or any(d in first for d in DENY):
+        return False
+    plain = answer.replace("*", "")
+    if any(sentence_key(f) != sentence_key(sentence) for f in FIX_LINE.findall(plain)):
+        return False
+    return all(a.strip() == b.strip() for a, b in ARROW.findall(plain))
+
+
+def learner_sentence(item):
+    """The one quoted sentence a `correction` item asks about, or None (paragraphs, other categories)."""
+    quoted = re.findall(r'"([^"]+)"', item["prompt"])
+    return quoted[0] if item["category"] == "correction" and len(quoted) == 1 else None
+
+
+def score_check(answer, check, sentence=None):
+    if check["type"] == "says_correct":
+        return says_correct(answer, check["values"][0])
+    if sentence and says_correct(answer, sentence):
+        return False  # "틀린 곳이 없어요" can't pass because the fixed form shows up in the practice exercise
     text = normalize(answer)
     hits = [v for v in check["values"] if contains_phrase(text, v)]
     if check["type"] == "contains_any":
@@ -136,7 +173,7 @@ def main():
                     "model": model,
                     "id": item["id"],
                     "category": item["category"],
-                    "check_pass": score_check(answer, item["check"]),
+                    "check_pass": score_check(answer, item["check"], learner_sentence(item)),
                     "korean_pass": is_korean(answer) if item["require_korean"] else None,
                     "seconds": round(time.time() - t0, 1),
                     **stats,
@@ -163,7 +200,7 @@ def rescore(results_dir, items_by_id):
             item = items_by_id.get(row["id"])
             if item is None:
                 continue
-            row["check_pass"] = score_check(row["answer"], item["check"])
+            row["check_pass"] = score_check(row["answer"], item["check"], learner_sentence(item))
             row["korean_pass"] = is_korean(row["answer"]) if item["require_korean"] else None
             row["rubric"] = item.get("rubric")
             rows.append(row)

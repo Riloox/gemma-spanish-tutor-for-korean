@@ -6,15 +6,24 @@ teacher model to trust. Error types map to the pain-point research:
 
   article_gender   la problema / el foto / la agua     (Korean has no gender)
   agreement        una casa blanco / mi hermana es alto
-  ser_estar        soy cansado / soy en Seúl / estoy estudiante
+  ser_estar        soy cansado / soy en Seúl / estoy estudiante / estoy de Incheon / la fiesta está en…
   subjunctive      espero que vienes / cuando terminaré
-  gustar           yo gusto el café / me gusta las películas
-  personal_a       veo mi madre
+  gustar           yo gusto el café / me gusta las películas / yo encanto… / me duele los pies
+  si_clause        si tengo un coche, viajaría / si tendría… / si lloverá mañana
+  personal_a       veo mi madre / espero a el tren
   past_tense       ayer iba al cine / cuando era niño jugué
 
-~25% of examples are *correct* sentences where the right answer is "네, 맞아요".
-Step 1 showed models saying "완벽해요!" to wrong sentences; they must also learn
-not to invent errors in correct ones.
+Both directions of a contrast get examples: estar is sometimes the fix and sometimes the
+error, so the model can't learn "estar = correct".
+
+Every item is rendered with its error. A ~15% slice is *also* rendered as the correct
+sentence ("네, 맞아요"), so each "correct" example has its broken twin in the data and
+the model has to look at the exact word that differs. v2 had 30% correct examples on
+separate items and learned "fluent-looking → 👍", passing wrong sentences in the eval.
+Step 1 showed models inventing errors in correct sentences, so the slice stays nonzero.
+
+Single-sentence answers open with the check (rule + the form the learner used, ✓/✗) and
+only then give the verdict. See check_lines().
 
     uv run python -m data.build_corrections
 """
@@ -26,10 +35,10 @@ from data.common import OUT_DIR, copula, eval_sentences, example, is_contaminate
 from data.conjugator import form
 
 SEED = 7
-CORRECT_SHARE = 0.25
+CORRECT_SHARE = 0.15  # of items per type that also get a "correct as-is" example
 PER_TYPE = {
     "article_gender": 260, "agreement": 320, "ser_estar": 360, "subjunctive": 360,
-    "gustar": 160, "personal_a": 130, "past_tense": 260,
+    "gustar": 160, "si_clause": 200, "personal_a": 130, "past_tense": 260,
 }
 N_MULTI = 260
 
@@ -74,6 +83,8 @@ NOUNS_WHERE = [  # (noun, gender, Korean) used in "¿Dónde está el/la ___?"
     ("paraguas", "m", "우산"), ("hotel", "m", "호텔"), ("tren", "m", "기차"), ("restaurante", "m", "식당"),
     ("foto", "f", "사진"), ("moto", "f", "오토바이"), ("radio", "f", "라디오"), ("llave", "f", "열쇠"),
     ("leche", "f", "우유"), ("mochila", "f", "배낭"), ("estación", "f", "역"), ("universidad", "f", "대학교"),
+    ("teléfono", "m", "전화기"), ("pasaporte", "m", "여권"), ("bolso", "m", "가방"), ("reloj", "m", "시계"),
+    ("computadora", "f", "컴퓨터"), ("cámara", "f", "카메라"), ("farmacia", "f", "약국"), ("habitación", "f", "방"),
     ("agua", "f*", "물"), ("aula", "f*", "교실"),
 ]
 NOUNS_IMPORTANT = [  # used in "El/La ___ es muy importante."
@@ -81,7 +92,11 @@ NOUNS_IMPORTANT = [  # used in "El/La ___ es muy importante."
     ("idioma", "m", "언어"), ("clima", "m", "기후"), ("examen", "m", "시험"), ("método", "m", "방법"),
     ("lección", "f", "이번 과"), ("clase", "f", "수업"), ("salud", "f", "건강"), ("opinión", "f", "의견"),
     ("verdad", "f", "진실"), ("costumbre", "f", "습관"),
+    ("mensaje", "m", "메시지"), ("viaje", "m", "여행"), ("educación", "f", "교육"), ("libertad", "f", "자유"),
+    ("paz", "f", "평화"), ("familia", "f", "가족"),
 ]
+NEEDED = {"mapa", "paraguas", "coche", "libro", "llave", "mochila", "foto", "teléfono", "pasaporte", "bolso",
+          "reloj", "computadora", "cámara", "habitación", "hotel"}  # countable things you'd "need"; not leche, not places
 SHORTENED = {"foto": "fotografía", "moto": "motocicleta", "radio": "radiodifusión"}
 
 
@@ -116,6 +131,16 @@ def gen_article_gender():
             f"{josa(ko, '은/는')} 어디 있어요?", rule + " " + GENERAL_NOTE["article_gender"],
             f"{noun}{'는 el을 쓰는 여성 명사' if g == 'f*' else ('는 남성' if g == 'm' else '는 여성')} → {right} {noun}",
             f"'{noun}' 앞에 {josa(right, '을/를')} 정확하게 썼어요.",
+        ))
+    for noun, g, ko in NOUNS_WHERE:
+        if noun not in NEEDED:
+            continue
+        right, wrong = ("una", "un") if g == "f" else ("un", "una")
+        items.append(Item(
+            "article_gender", "Necesito {X} " + noun + ".", right, wrong,
+            f"{josa(ko, '이/가')} 필요해요.", gender_rule(noun, g, right) + " " + GENERAL_NOTE["article_gender"],
+            f"{noun}는 {'남성' if g == 'm' else '여성'} 명사 → {right} {noun}",
+            f"'{noun}'의 성에 맞게 {josa(right, '을/를')} 썼어요.",
         ))
     for noun, g, ko in NOUNS_IMPORTANT:
         right, wrong = ("La", "El") if g == "f" else ("El", "La")
@@ -235,8 +260,21 @@ JOBS = [  # masc, fem, masc pl, Korean
     ("enfermero", "enfermera", "enfermeros", "간호사"), ("coreano", "coreana", "coreanos", "한국 사람"),
     ("cocinero", "cocinera", "cocineros", "요리사"),
 ]
-JOB_SUBJECTS = [("{V} {J}.", "yo", "저는"), ("Mi hermana {V} {J}.", "él", "제 여동생은"),
-                ("Mi hermano {V} {J}.", "él", "제 남동생은"), ("Mis amigos {V} {J}.", "ellos", "제 친구들은 모두")]
+JOB_SUBJECTS = [  # template, person, which job form (None = either), Korean subject
+    ("{V} {J}.", "yo", None, "저는"), ("Yo {V} {J}.", "yo", "m", "저는"),  # learners often keep the pronoun
+    ("Mi hermana {V} {J}.", "él", "f", "제 여동생은"),
+    ("Mi hermano {V} {J}.", "él", "m", "제 남동생은"), ("Mis amigos {V} {J}.", "ellos", "mp", "제 친구들은 모두"),
+    ("Mi padre {V} {J}.", "él", "m", "제 아버지는"), ("Mi madre {V} {J}.", "él", "f", "제 어머니는"),
+    ("Nosotros {V} {J}.", "nosotros", "mp", "우리는 모두"),
+]
+ORIGINS = [("Incheon", "인천"), ("Gwangju", "광주"), ("Jeju", "제주"), ("Madrid", "마드리드"), ("Lima", "리마"),
+           ("Bogotá", "보고타")]
+ORIGIN_SUBJECTS = [("{V} de {C}.", "yo", "저는 {C} 출신이에요."), ("Mi novia {V} de {C}.", "él", "제 여자친구는 {C} 출신이에요."),
+                   ("Mis padres {V} de {C}.", "ellos", "제 부모님은 {C} 출신이세요.")]
+EVENTS = [("La fiesta", "파티", "파티는"), ("El concierto", "콘서트", "콘서트는"), ("La reunión", "회의", "회의는"),
+          ("La boda", "결혼식", "결혼식은"), ("El examen", "시험", "시험은")]
+EVENT_PLACES = [("en mi casa", "저희 집에서"), ("en el hotel", "호텔에서"), ("en la universidad", "대학교에서"),
+                ("en el centro", "시내에서")]
 
 
 def agree(adj_m, g, n):
@@ -269,13 +307,8 @@ def gen_ser_estar():
                 "위치 → estar", "위치를 말할 때 estar를 잘 썼어요.",
             ))
     for m, f, mp, ko_job in JOBS:
-        for tmpl, p, ko_subj in JOB_SUBJECTS:
-            if "hermana" in tmpl:
-                job = f
-            elif p == "ellos":
-                job = mp
-            else:
-                job = m if "hermano" in tmpl else random.Random(m).choice([m, f])
+        for tmpl, p, which, ko_subj in JOB_SUBJECTS:
+            job = {"m": m, "f": f, "mp": mp, None: random.Random(m).choice([m, f])}[which]
             right, wrong = form("ser", "indicativo", "presente", p), form("estar", "indicativo", "presente", p)
             x_right, x_wrong = (cap(right), cap(wrong)) if tmpl.startswith("{V}") else (right, wrong)
             items.append(Item(
@@ -284,6 +317,25 @@ def gen_ser_estar():
                 "직업·국적·신분처럼 '그 사람이 누구인지'는 **ser**를 써요. estar는 일시적인 상태나 위치에 써요. "
                 "참고로 직업 앞에는 보통 관사(un/una)를 붙이지 않아요: Soy estudiante.",
                 "직업·국적 → ser", "직업이나 국적을 말할 때 ser를 잘 썼어요.",
+            ))
+    for city, ko_city in ORIGINS:
+        for tmpl, p, ko in ORIGIN_SUBJECTS:
+            right, wrong = form("ser", "indicativo", "presente", p), form("estar", "indicativo", "presente", p)
+            x_right, x_wrong = (cap(right), cap(wrong)) if tmpl.startswith("{V}") else (right, wrong)
+            items.append(Item(
+                "ser_estar", tmpl.replace("{V}", "{X}").replace("{C}", city), x_right, x_wrong, ko.replace("{C}", ko_city),
+                "출신(어디에서 왔는지)은 **ser de**로 말해요. 출신은 바뀌지 않는 그 사람의 정보라서 ser예요. "
+                f"지금 있는 위치라면 estar en을 써요: Estoy en {city}.",
+                "출신 → ser de", "출신을 말할 때 ser de를 잘 썼어요.",
+            ))
+    for event, ko_noun, ko_event in EVENTS:
+        for place, ko_place in EVENT_PLACES:
+            items.append(Item(
+                "ser_estar", f"{event} {{X}} {place}.", "es", "está", f"{ko_event} {ko_place} 열려요.",
+                "사람이나 물건의 위치는 estar지만, 파티·콘서트·회의처럼 **행사가 열리는 장소**는 **ser**를 써요. "
+                f"{ko_event} 어딘가에 '있는' 게 아니라 '열리는' 것이라서 es예요. "
+                "(비교: Mi casa está cerca del centro. 집의 위치는 estar)",
+                "행사가 열리는 장소 → ser", "행사가 열리는 장소에 ser를 잘 썼어요.",
             ))
     return items
 
@@ -356,7 +408,15 @@ def gen_subjunctive():
 # ---------------------------------------------------------------- gustar
 
 LIKES_SG = [("el café", "커피"), ("la música", "음악"), ("el fútbol", "축구"), ("la comida coreana", "한국 음식"),
-            ("el chocolate", "초콜릿"), ("el invierno", "겨울"), ("la playa", "바다")]
+            ("el chocolate", "초콜릿"), ("el invierno", "겨울"), ("la playa", "바다"), ("la pizza", "피자"),
+            ("el verano", "여름"), ("el arte", "미술"), ("la fruta", "과일")]
+LIKES_INF = [("bailar", "춤추는 것"), ("cocinar", "요리하는 것"), ("leer", "책 읽는 것"), ("cantar", "노래하는 것"),
+             ("nadar", "수영하는 것"), ("caminar", "걷는 것")]
+PAIN = [("la cabeza", "머리가", False), ("el estómago", "배가", False), ("la espalda", "등이", False),
+        ("la garganta", "목이", False), ("los pies", "발이", True), ("los ojos", "눈이", True),
+        ("las piernas", "다리가", True), ("los dientes", "이가", True)]
+YO_GUSTO_RULE = ("gustar는 '좋아하다'가 아니라 '~이 (나에게) 좋다'는 구조예요. 좋아하는 대상이 주어라서 "
+                 "**Me gusta {thing}**({ko} 나에게 좋다)처럼 써요. 'Yo gusto'는 '내가 (누군가의) 마음에 든다'는 뜻이 돼요.")
 LIKES_PL = [("las películas", "영화"), ("los libros", "책"), ("los perros", "강아지"), ("las flores", "꽃"),
             ("los idiomas", "외국어"), ("los gatos", "고양이"), ("los deportes", "운동")]
 
@@ -366,8 +426,7 @@ def gen_gustar():
     for thing, ko in LIKES_SG:
         items.append(Item(
             "gustar", "{X} mucho " + thing + ".", "Me gusta", "Yo gusto", f"저는 {josa(ko, '을/를')} 정말 좋아해요.",
-            "gustar는 '좋아하다'가 아니라 '~이 (나에게) 좋다'는 구조예요. 좋아하는 대상이 주어라서 "
-            f"**Me gusta {thing}**({josa(ko, '이/가')} 나에게 좋다)처럼 써요. 'Yo gusto'는 '내가 (누군가의) 마음에 든다'는 뜻이 돼요.",
+            YO_GUSTO_RULE.format(thing=thing, ko=josa(ko, "이/가")),
             "gustar는 '~이 나에게 좋다' → Me gusta", "gustar 구문을 정확하게 썼어요.",
         ))
         items.append(Item(
@@ -376,6 +435,41 @@ def gen_gustar():
             "gustar는 '~이 (누구에게) 좋다'는 구조라서, 좋아하는 사람은 간접목적어 대명사로 나타내요: "
             f"A mi hermana **le gusta** {thing}. le가 빠지면 틀린 문장이 돼요.",
             "누가 좋아하는지 → le gusta", "간접목적어 le까지 정확하게 썼어요.",
+        ))
+        items.append(Item(
+            "gustar", "{X} " + thing + ".", "Me encanta", "Yo encanto", f"저는 {josa(ko, '이/가')} 정말 좋아요.",
+            "encantar(아주 좋아하다)도 gustar처럼 '~이 나에게 아주 좋다'는 구조예요. 좋아하는 대상이 주어라서 "
+            f"**Me encanta {thing}**처럼 써요. 'Yo encanto'는 '내가 (누군가를) 매혹한다'는 뜻이 돼요.",
+            "encantar도 gustar 구조 → Me encanta", "encantar를 gustar처럼 정확하게 썼어요.",
+        ))
+    for verb, ko in LIKES_INF:
+        items.append(Item(
+            "gustar", "{X} mucho " + verb + ".", "Me gusta", "Yo gusto", f"저는 {josa(ko, '을/를')} 정말 좋아해요.",
+            YO_GUSTO_RULE.format(thing=verb, ko=josa(ko, "이/가")) + " 동사원형이 오면 동사는 항상 단수 gusta예요.",
+            "gustar + 동사원형 → Me gusta", "gustar 구문을 정확하게 썼어요.",
+        ))
+        items.append(Item(
+            "gustar", "A mi hermano {X} mucho " + verb + ".", "le gusta", "gusta",
+            f"제 남동생은 {josa(ko, '을/를')} 정말 좋아해요.",
+            "gustar는 '~이 (누구에게) 좋다'는 구조라서, 좋아하는 사람은 간접목적어 대명사로 나타내요: "
+            f"A mi hermano **le gusta** {verb}. le가 빠지면 틀린 문장이 돼요.",
+            "누가 좋아하는지 → le gusta", "간접목적어 le까지 정확하게 썼어요.",
+        ))
+    for thing, ko in LIKES_PL:
+        items.append(Item(
+            "gustar", "A mis padres {X} mucho " + thing + ".", "les gustan", "les gusta",
+            f"제 부모님은 {josa(ko, '을/를')} 정말 좋아하세요.",
+            f"gustar 문장에서 주어는 좋아하는 대상이에요. 대상({thing})이 복수라서 **gustan**이고, "
+            "좋아하는 사람(mis padres)이 복수라서 간접목적어도 **les**예요. 둘 다 맞춰야 해요.",
+            f"대상이 복수({thing}) → les gustan", "les와 gustan을 둘 다 정확하게 맞췄어요.",
+        ))
+    for part, ko, plural in PAIN:
+        right, wrong = ("duelen", "duele") if plural else ("duele", "duelen")
+        items.append(Item(
+            "gustar", "Hoy me {X} " + part + ".", right, wrong, f"오늘 {ko} 아파요.",
+            f"doler(아프다)는 gustar처럼 **아픈 곳이 주어**예요. {part}{'가 복수라서' if plural else '가 단수라서'} "
+            f"**{right}**{copula(right)}. 아픈 사람은 me/te/le로 나타내요.",
+            f"아픈 곳({part}) → {right}", f"아픈 곳에 맞춰 {josa(right, '을/를')} 잘 썼어요.",
         ))
     for thing, ko in LIKES_PL:
         items.append(Item(
@@ -386,16 +480,100 @@ def gen_gustar():
     return items
 
 
+# ---------------------------------------------------------------- si clauses
+
+UNREAL = [  # si-verb, complement, main verb, main complement (with {pos}), Korean condition, Korean result
+    ("tener", "un coche", "viajar", "por todo el país", "차가 있다면", "전국을 여행할 텐데요"),
+    ("vivir", "en España", "hablar", "español todos los días", "스페인에 산다면", "매일 스페인어를 쓸 텐데요"),
+    ("poder", "volar", "ir", "a Madrid cada fin de semana", "날 수 있다면", "주말마다 마드리드에 갈 텐데요"),
+    ("saber", "cocinar", "hacer", "paella para {pos} amigos", "요리를 할 줄 안다면", "친구들에게 빠에야를 만들어 줄 텐데요"),
+    ("estar", "en Seúl", "visitar", "a {pos} abuelos", "서울에 있다면", "할머니 할아버지를 찾아뵐 텐데요"),
+    ("tener", "vacaciones", "ir", "a la playa", "휴가가 있다면", "바다에 갈 텐데요"),
+    ("hablar", "bien inglés", "trabajar", "en Canadá", "영어를 잘한다면", "캐나다에서 일할 텐데요"),
+    ("vivir", "cerca del mar", "nadar", "todos los días", "바닷가 근처에 산다면", "매일 수영할 텐데요"),
+    ("tener", "más tiempo", "aprender", "a tocar la guitarra", "시간이 더 있다면", "기타를 배울 텐데요"),
+    ("ganar", "la lotería", "comprar", "una casa en la playa", "복권에 당첨된다면", "바닷가에 집을 살 텐데요"),
+    ("poder", "elegir", "vivir", "en Barcelona", "고를 수 있다면", "바르셀로나에서 살 텐데요"),
+    ("tener", "un perro", "salir", "a caminar todos los días", "강아지가 있다면", "매일 산책하러 나갈 텐데요"),
+    ("estudiar", "más", "aprobar", "el examen", "공부를 더 한다면", "시험에 합격할 텐데요"),
+    ("saber", "nadar", "ir", "a la piscina con {pos} amigos", "수영을 할 줄 안다면", "친구들이랑 수영장에 갈 텐데요"),
+]
+REAL = [  # si-verb, complement, main clause, Korean condition, Korean result
+    ("tener", "tiempo el sábado", "te llamo", "토요일에 시간이 있으면", "전화할게요"),
+    ("terminar", "el trabajo temprano", "voy al cine", "일을 일찍 끝내면", "영화 보러 갈게요"),
+    ("llegar", "a tiempo", "te escribo", "제시간에 도착하면", "문자할게요"),
+    ("encontrar", "las llaves", "te aviso", "열쇠를 찾으면", "알려 줄게요"),
+    ("ganar", "el partido", "invito a todos", "경기에서 이기면", "모두에게 한턱낼게요"),
+    ("salir", "temprano de clase", "paso por tu casa", "수업이 일찍 끝나면", "너희 집에 들를게요"),
+    ("ver", "a Juan", "le digo la verdad", "후안을 보면", "사실대로 말할게요"),
+    ("tener", "hambre", "como algo", "배가 고프면", "뭘 좀 먹을게요"),
+    ("volver", "pronto", "cenamos juntos", "일찍 돌아오면", "같이 저녁 먹어요"),
+    ("estar", "libre el domingo", "te ayudo con la mudanza", "일요일에 한가하면", "이사하는 거 도와줄게요"),
+    ("recibir", "el dinero", "te pago", "돈을 받으면", "갚을게요"),
+]
+UNREAL_RULE = ("지금 사실이 아닌 일을 가정할 때(~라면 ~할 텐데)는 si 뒤에 **접속법 과거**({right})를, "
+               "결과 부분에 **조건법**({main})을 써요.")
+
+
+def gen_si_clause():
+    items = []
+    for verb, comp, main_verb, main_comp, ko_if, ko_then in UNREAL:
+        for p, pos in (("yo", "mis"), ("nosotros", "nuestros"), ("tú", "tus")):
+            right = form(verb, "subjuntivo", "pretérito-imperfecto-1", p)
+            main = form(main_verb, "condicional", "presente", p)
+            tmpl = f"Si {{X}} {comp}, {main} {main_comp.replace('{pos}', pos)}."
+            for wrong, why in (
+                (form(verb, "indicativo", "presente", p),
+                 "si + 직설법 현재는 실제로 일어날 수 있는 조건(Si tengo tiempo, te llamo)에 써요. 조건법과 섞으면 안 돼요."),
+                (form(verb, "condicional", "presente", p),
+                 "si 바로 뒤에는 조건법을 쓰지 않아요. 조건법은 결과 부분에만 와요."),
+            ):
+                items.append(Item(
+                    "si_clause", tmpl, right, wrong, f"{ko_if} {ko_then}.",
+                    UNREAL_RULE.format(right=right, main=main) + f" 그래서 {josa(wrong, '이/가')} 아니라 **{right}**{copula(right)}. " + why,
+                    f"사실이 아닌 가정 → si + 접속법 과거 {right}",
+                    "사실이 아닌 가정에 si + 접속법 과거를 정확하게 썼어요.",
+                ))
+    for verb, comp, main, ko_if, ko_then in REAL:
+        right = form(verb, "indicativo", "presente", "yo")
+        wrong = form(verb, "indicativo", "futuro", "yo")
+        items.append(Item(
+            "si_clause", f"Si {{X}} {comp}, {main}.", right, wrong, f"{ko_if} {ko_then}.",
+            "실제로 일어날 수 있는 조건(~하면)은 si 뒤에 **직설법 현재**를 써요. 미래의 일이라도 si 바로 뒤에는 "
+            f"미래형을 쓰지 않아서 {josa(wrong, '이/가')} 아니라 **{right}**{copula(right)}. 결과 부분에는 현재나 미래를 써요.",
+            f"si + 실제 조건 → 직설법 현재 {right}", "si 뒤에 직설법 현재를 잘 썼어요.",
+        ))
+    return items
+
+
 # ---------------------------------------------------------------- personal a
 
 PERSONS_A = [  # Spanish, Korean, honorific?
     ("mi madre", "어머니", True), ("mi abuela", "할머니", True), ("mi profesor", "선생님", True),
     ("mis amigos", "친구들", False), ("mi novia", "여자친구", False), ("Juan", "후안", False),
+    ("mi hermano", "남동생", False), ("mis abuelos", "조부모님", True), ("mi tía", "이모", True),
+    ("María", "마리아", False), ("mi vecina", "이웃", False),
+    ("mi padre", "아버지", True), ("mis hijos", "아이들", False), ("Ana", "아나", False),
+    ("mi jefe", "상사", True), ("mis primos", "사촌들", False),
 ]
 A_FRAMES = [  # Spanish template, Korean (plain), Korean (honorific)
     ("Veo {X} todos los días.", "저는 매일 {K} 봐요.", "저는 매일 {K} 봬요."),
     ("Llamo {X} cada semana.", "저는 매주 {E} 전화해요.", "저는 매주 {H} 전화드려요."),
     ("Visito {X} los domingos.", "저는 일요일마다 {K} 찾아가요.", "저는 일요일마다 {K} 찾아뵈어요."),
+    ("Espero {X} en la estación.", "저는 역에서 {K} 기다려요.", "저는 역에서 {K} 기다려요."),
+    ("Quiero mucho {X}.", "저는 {K} 많이 사랑해요.", "저는 {K} 많이 사랑해요."),
+    ("Busco {X} en el parque.", "저는 공원에서 {K} 찾고 있어요.", "저는 공원에서 {K} 찾고 있어요."),
+    ("Invito {X} a cenar.", "저는 {K} 저녁 식사에 초대해요.", "저는 {K} 저녁 식사에 모셔요."),
+]
+THINGS_A = [  # the other direction: things and places take no a. Template, object, Korean
+    ("Veo {X} todos los días.", "la televisión", "저는 매일 텔레비전을 봐요."),
+    ("Veo {X} todos los días.", "las noticias", "저는 매일 뉴스를 봐요."),
+    ("Busco {X} en el parque.", "mis llaves", "저는 공원에서 열쇠를 찾고 있어요."),
+    ("Espero {X} en la estación.", "el tren", "저는 역에서 기차를 기다려요."),
+    ("Espero {X} en la parada.", "el autobús", "저는 정류장에서 버스를 기다려요."),
+    ("Visito {X} los domingos.", "el museo", "저는 일요일마다 박물관에 가요."),
+    ("Visito {X} cada verano.", "Madrid", "저는 여름마다 마드리드를 방문해요."),
+    ("Necesito {X} hoy.", "el coche", "저는 오늘 차가 필요해요."),
 ]
 
 
@@ -410,6 +588,14 @@ def gen_personal_a():
                 "사물에는 붙이지 않아요: Veo la televisión. 한국어의 '~을/를'과 달리 사람일 때만 생긴다는 게 핵심이에요.",
                 "사람 목적어 앞 → a", "사람 목적어 앞에 a를 잘 붙였어요.",
             ))
+    for tmpl, thing, ko in THINGS_A:
+        wrong = "al " + thing[3:] if thing.startswith("el ") else "a " + thing
+        items.append(Item(
+            "personal_a", tmpl, thing, wrong, ko,
+            "인칭의 a는 **사람**이 직접목적어일 때만 붙여요. 사물이나 장소 앞에는 붙이지 않아요. "
+            f"{josa(thing, '은/는')} 사람이 아니라서 a 없이 써요. (비교: Veo a mi madre. 사람이라서 a)",
+            "사물·장소 목적어 → a 없음", "사물 목적어 앞에 a를 붙이지 않고 잘 썼어요.",
+        ))
     return items
 
 
@@ -458,7 +644,8 @@ def gen_past_tense():
 
 GENERATORS = {
     "article_gender": gen_article_gender, "agreement": gen_agreement, "ser_estar": gen_ser_estar,
-    "subjunctive": gen_subjunctive, "gustar": gen_gustar, "personal_a": gen_personal_a, "past_tense": gen_past_tense,
+    "subjunctive": gen_subjunctive, "gustar": gen_gustar, "si_clause": gen_si_clause, "personal_a": gen_personal_a,
+    "past_tense": gen_past_tense,
 }
 
 # ---------------------------------------------------------------- rendering
@@ -483,10 +670,19 @@ def exercise(rng, pool, item):
     return f"빈칸을 채워 보세요: {other.sentence('___')} ({' / '.join(options)})"
 
 
+def check_lines(item, used, ok):
+    """Check first, verdict after: name the rule, quote what the learner wrote, then judge it.
+
+    A 2B model that opens with the verdict commits before looking at the risky word.
+    Both renderings share this opening, so it can't tell right from wrong until it quotes the form.
+    """
+    return f"**확인할 점:** {item.rule_short}\n**쓴 형태:** '{used}' {'✓' if ok else '✗'}\n\n"
+
+
 def render_wrong(rng, item, pool):
     return example(
         rng.choice(PROMPTS).format(s=item.incorrect),
-        f"{rng.choice(OPENERS)}**고친 문장:** {item.correct}\n({item.ko})\n\n"
+        f"{check_lines(item, item.wrong, False)}{rng.choice(OPENERS)}**고친 문장:** {item.correct}\n({item.ko})\n\n"
         f"**무엇이 틀렸나요?**\n'{item.wrong}' → '{item.right}'\n\n"
         f"**왜 그런가요?**\n{item.rule}\n\n"
         f"**연습 문제**\n{exercise(rng, pool, item)}",
@@ -497,7 +693,8 @@ def render_wrong(rng, item, pool):
 def render_ok(rng, item):
     return example(
         rng.choice(PROMPTS).format(s=item.correct),
-        f"네, 맞아요! 👍 자연스러운 문장이에요.\n\n{item.correct}\n({item.ko})\n\n잘한 점: {item.ok_note}",
+        f"{check_lines(item, item.right, True)}네, 맞아요! 👍 틀린 곳이 없어요. 자연스러운 문장이에요.\n\n"
+        f"{item.correct}\n({item.ko})\n\n잘한 점: {item.ok_note}",
         kind="corr_ok", error_type=item.type,
     )
 
@@ -526,10 +723,10 @@ def main():
         dropped += len(items) - len(clean)
         pools[name] = clean
         chosen = rng.sample(clean, min(PER_TYPE[name], len(clean)))
-        n_ok = int(len(chosen) * CORRECT_SHARE)
-        rows += [render_ok(rng, it) for it in chosen[:n_ok]]
-        rows += [render_wrong(rng, it, clean) for it in chosen[n_ok:]]
-        print(f"  {name:15} {len(clean):4} candidates -> {len(chosen)} examples ({n_ok} correct-as-is)")
+        n_ok = round(len(chosen) * CORRECT_SHARE)
+        rows += [render_wrong(rng, it, clean) for it in chosen]
+        rows += [render_ok(rng, it) for it in chosen[:n_ok]]  # paired with their wrong twins above
+        print(f"  {name:15} {len(clean):4} candidates -> {len(chosen)} wrong + {n_ok} correct-as-is")
     print(f"  dropped {dropped} items that match eval sentences")
 
     all_items = [it for pool in pools.values() for it in pool]

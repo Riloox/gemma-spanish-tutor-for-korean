@@ -65,7 +65,7 @@ def load_split(seed, limit=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true", help="tiny run to check the pipeline")
-    ap.add_argument("--epochs", type=float, default=2)
+    ap.add_argument("--epochs", type=float, default=1)  # v2 eval loss was flat after ~1.4 epochs
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--rank", type=int, default=16)
     ap.add_argument("--max-length", type=int, default=2048)
