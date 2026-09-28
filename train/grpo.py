@@ -13,6 +13,7 @@ not v2. Drift is watched with the eval instead.
 
     uv run python -m train.grpo --smoke          # 2 steps: checks generation, rewards and the update run
     uv run python -m train.grpo                  # the real run, writes outputs/grpo/
+    uv run python -m train.grpo --resume         # continue an interrupted run from its last checkpoint
 """
 
 import argparse
@@ -43,6 +44,7 @@ def main():
     ap.add_argument("--max-completion", type=int, default=512)
     ap.add_argument("--out", default=str(ROOT / "outputs" / "grpo"))
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--resume", action="store_true", help="continue from the newest checkpoint in --out")
     args = ap.parse_args()
 
     rows = [json.loads(line) for line in PROMPTS.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -93,7 +95,7 @@ def main():
     trainer = GRPOTrainer(model=model, reward_funcs=make_rewards(tokenizer, args.max_completion),
                           args=config, train_dataset=ds, processing_class=tokenizer)
     trainer.model.print_trainable_parameters()
-    trainer.train()
+    trainer.train(resume_from_checkpoint=args.resume or None)  # True = newest checkpoint in output_dir
     trainer.save_model(Path(args.out) / "final")
     print(f"adapter saved to {Path(args.out) / 'final'}")
     print(f"peak VRAM {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB")
