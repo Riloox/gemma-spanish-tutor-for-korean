@@ -7,13 +7,15 @@ likely, worse → less likely. No value network, no human labels, just the verif
 where all answers score the same teaches nothing, which is why the prompts are a mix the model
 sometimes gets right and sometimes doesn't.
 
-We keep training the v2 LoRA adapter on the same 4-bit base as Step 3. beta=0 (no KL penalty):
-with a KL term, TRL uses the adapter-disabled model as the reference, and that's the stock base,
-not v2. Drift is watched with the eval instead.
+We keep training a LoRA adapter (v2's, or round 1's for round 2) on the same 4-bit base as Step 3.
+--beta adds a KL penalty toward the adapter we *start* from: TRL copies it as a frozen "ref"
+adapter, so the penalty holds back drift on skills no reward covers (explanations, pronunciation).
+Round 1 ran with beta=0.
 
     uv run python -m train.grpo --smoke          # 2 steps: checks generation, rewards and the update run
     uv run python -m train.grpo                  # the real run, writes outputs/grpo/
     uv run python -m train.grpo --resume         # continue an interrupted run from its last checkpoint
+    uv run python -m train.grpo --adapter outputs/grpo/final --prompts data/out/rl_prompts_hard.jsonl         --beta 0.03 --steps 150 --save-steps 25 --out outputs/grpo2      # round 2 (scripts/grpo_round2.py)
 """
 
 import argparse
@@ -37,6 +39,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true", help="2 steps on a few prompts")
     ap.add_argument("--adapter", default=str(ROOT / "outputs" / "sft-v2" / "final"))
+    ap.add_argument("--prompts", default=str(PROMPTS), type=Path)
+    ap.add_argument("--beta", type=float, default=0.0, help="KL penalty toward the starting adapter")
     ap.add_argument("--steps", type=int, default=250)
     ap.add_argument("--lr", type=float, default=1e-5)
     ap.add_argument("--generations", type=int, default=8, help="answers sampled per question")
@@ -44,12 +48,14 @@ def main():
     ap.add_argument("--max-completion", type=int, default=512)
     ap.add_argument("--out", default=str(ROOT / "outputs" / "grpo"))
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--save-steps", type=int, default=25)
+    ap.add_argument("--save-limit", type=int, default=4, help="checkpoints kept; 0 keeps all")
     ap.add_argument("--resume", action="store_true", help="continue from the newest checkpoint in --out")
     args = ap.parse_args()
 
-    rows = [json.loads(line) for line in PROMPTS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [json.loads(line) for line in args.prompts.read_text(encoding="utf-8").splitlines() if line.strip()]
     ds = Dataset.from_list(rows[:16] if args.smoke else rows)
-    print(f"{len(ds)} prompts from {PROMPTS.name}")
+    print(f"{len(ds)} prompts from {args.prompts.name}")
 
     tokenizer = AutoTokenizer.from_pretrained(BASE)
     model = AutoModelForMultimodalLM.from_pretrained(
@@ -75,7 +81,7 @@ def main():
         num_generations=args.generations,
         max_completion_length=args.max_completion,
         temperature=1.0,  # sampling must vary, or every answer in a group is the same and nothing is learned
-        beta=0.0,
+        beta=args.beta,
         loss_type="dapo",  # token-level normalization over the batch: no bias toward short or long answers
         learning_rate=args.lr,
         lr_scheduler_type="constant_with_warmup",
@@ -83,18 +89,27 @@ def main():
         reward_weights=[1.0, 1.0],
         gradient_checkpointing=True,
         bf16=True,
-        optim="paged_adamw_8bit",
+        # Not the paged variant: paging moves optimizer state between GPU and RAM through the driver, and a
+        # checkpoint save with the card nearly full froze Windows (nvlddmkm error). LoRA's state is ~50 MB anyway.
+        optim="adamw_bnb_8bit",
         logging_steps=1,
         save_strategy="steps",
-        save_steps=25,
-        save_total_limit=4,
+        save_steps=args.save_steps,
+        save_total_limit=args.save_limit or None,
         report_to="none",
         seed=args.seed,
     )
 
     trainer = GRPOTrainer(model=model, reward_funcs=make_rewards(tokenizer, args.max_completion),
                           args=config, train_dataset=ds, processing_class=tokenizer)
+    # TRL casts a 4-bit model's trainable weights to bf16 (the QLoRA recipe). At lr 1e-5 most Adam steps are
+    # smaller than bf16's spacing near the adapter's weights and round to nothing, so train them in fp32 again.
+    # The optimizer is built in train(), after this.
+    for p in trainer.model.parameters():
+        if p.requires_grad:
+            p.data = p.data.float()
     trainer.model.print_trainable_parameters()
+    print("trainable dtypes:", sorted({str(p.dtype) for p in trainer.model.parameters() if p.requires_grad}))
     trainer.train(resume_from_checkpoint=args.resume or None)  # True = newest checkpoint in output_dir
     trainer.save_model(Path(args.out) / "final")
     print(f"adapter saved to {Path(args.out) / 'final'}")

@@ -72,12 +72,13 @@ def _norm(s):
 
 
 def eval_sentences():
-    """Every quoted Spanish sentence in the eval set, normalized."""
+    """Every quoted Spanish sentence in the dev eval and the held-out test set, normalized."""
     found = set()
-    for line in (ROOT / "eval" / "eval_set.jsonl").read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            for q in re.findall(r'"([^"]+)"', json.loads(line)["prompt"]):
-                found.add(_norm(q))
+    for name in ("eval_set.jsonl", "test_set.jsonl"):
+        for line in (ROOT / "eval" / name).read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                for q in re.findall(r'"([^"]+)"', json.loads(line)["prompt"]):
+                    found.add(_norm(q))
     return found
 
 

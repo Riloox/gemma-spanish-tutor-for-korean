@@ -148,6 +148,7 @@ def main():
     p.add_argument("--system", default=ROOT / "prompts" / "tutor_system.txt", type=Path)
     p.add_argument("--host", default="http://localhost:11434")
     p.add_argument("--only", help="run only ids starting with this prefix, e.g. conj")
+    p.add_argument("--out", type=Path, help="results directory (default: results/<timestamp>)")
     args = p.parse_args()
 
     system = args.system.read_text(encoding="utf-8")
@@ -159,8 +160,8 @@ def main():
     if not args.models:
         p.error("--models is required unless --rescore is given")
 
-    out_dir = ROOT / "results" / datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir.mkdir(parents=True)
+    out_dir = args.out or ROOT / "results" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir.mkdir(parents=True, exist_ok=True)
     all_rows = []
 
     for model in args.models:
