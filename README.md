@@ -11,6 +11,10 @@ before the code, including the rounds that didn't work.
 
 ## What it does
 
+![Terminal demo: v4 fixes "Mi amiga es enferma hoy" to "está", then leaves a correct sentence alone](assets/demo.gif)
+
+*The shipped model in `ollama run`, real output at real speed on a laptop GPU (typing is simulated; recorded with `scripts/record_demo.py`).*
+
 The learner writes a Spanish sentence and asks (in Korean) whether it's right. The tutor rewrites it, names
 what changed, explains the rule in Korean, and gives one practice exercise:
 
@@ -116,6 +120,7 @@ eval/
 data/                     data builders: generators, teacher items, self-distillation, RL prompts; output -> data/out/
 train/                    sft.py, grpo.py, rewards.py (the verifiers), merge.py, ship.py
 scripts/                  one resumable pipeline per round; scripts/windows/ has the overnight launchers
+assets/demo.gif           README demo, recorded by scripts/record_demo.py
 Modelfile                 Ollama import of a quantized GGUF
 ```
 
