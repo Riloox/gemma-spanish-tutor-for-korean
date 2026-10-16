@@ -1,5 +1,5 @@
 """Round 4, start to finish: new test set -> baselines -> self-distilled SFT v4 (rewrite-first) -> GRPO round 4 -> test.
-Started by round4.bat; safe to stop and re-run (every stage resumes).
+Started by scripts/windows/round4.bat; safe to stop and re-run (every stage resumes).
 
 Why: grpo3 (59/70) vs the base (56/70) is noise again, and it trades recall for precision: it stopped inventing
 errors in correct sentences (20/30 -> 28/30, p=0.039) but praises errors the base catches (36/40 -> 31/40). All 9
@@ -232,9 +232,9 @@ def main():
             stage(name, fn)
         log(f"=== ALL DONE in {(time.time() - start) / 3600:.1f} h. Read outputs/grpo4/summary.md")
     except KeyboardInterrupt:
-        log("stopped by you (Ctrl+C). Run round4.bat again to resume.")
+        log("stopped by you (Ctrl+C). Run scripts/windows/round4.bat again to resume.")
     except Exception as e:
-        log(f"FAILED: {e}. Run round4.bat again to resume from where it stopped.")
+        log(f"FAILED: {e}. Run scripts/windows/round4.bat again to resume from where it stopped.")
         raise SystemExit(1)
     finally:
         if args.shutdown:

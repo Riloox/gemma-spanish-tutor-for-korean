@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 title Spanish tutor - round 4
 rem Lets PyTorch grow its memory blocks instead of fragmenting them (the Sep 30 run died with 1.2 GiB reserved but unusable)
 set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -19,7 +19,7 @@ echo   - don't close the lid (lid-close sleep can't be blocked)
 echo   - the screen may turn off; that's fine
 echo.
 echo  Safe to stop anytime with Ctrl+C and re-run: it resumes.
-echo  To turn the PC off at the end:  round4.bat shutdown
+echo  To turn the PC off at the end:  scripts\windows\round4.bat shutdown
 echo  Log:     logs\round4.log
 echo  Result:  outputs\grpo4\summary.md
 echo ============================================================

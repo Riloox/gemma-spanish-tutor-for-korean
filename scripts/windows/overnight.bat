@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 title Spanish tutor - overnight data generation
 echo ============================================================
 echo  Step 2c overnight job: teacher exam + explanation data

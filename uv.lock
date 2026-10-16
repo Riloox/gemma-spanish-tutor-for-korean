@@ -1170,7 +1170,7 @@ wheels = [
 ]
 
 [[package]]
-name = "my-own-lightweight-llm"
+name = "gemma-spanish-tutor-for-korean"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

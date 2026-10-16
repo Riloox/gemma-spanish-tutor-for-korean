@@ -1,5 +1,5 @@
 """Round 3, start to finish: teacher items -> SFT v3 (check-first) -> GRPO round 3 -> held-out test vs the base.
-Started by round3.bat; safe to stop and re-run (every stage resumes).
+Started by scripts/windows/round3.bat; safe to stop and re-run (every stage resumes).
 
 Why: grpo2 (59/70) vs the base (56/70) is noise. Every correction it misses opens with "네, 맞아요! 👍": the verdict
 comes in the first tokens, before the model has looked at the word. And in round 1, 41-44% of personal_a and
@@ -202,9 +202,9 @@ def main():
             stage(name, fn)
         log(f"=== ALL DONE in {(time.time() - start) / 3600:.1f} h. Read outputs/grpo3/summary.md")
     except KeyboardInterrupt:
-        log("stopped by you (Ctrl+C). Run round3.bat again to resume.")
+        log("stopped by you (Ctrl+C). Run scripts/windows/round3.bat again to resume.")
     except Exception as e:
-        log(f"FAILED: {e}. Run round3.bat again to resume from where it stopped.")
+        log(f"FAILED: {e}. Run scripts/windows/round3.bat again to resume from where it stopped.")
         raise SystemExit(1)
     finally:
         if args.shutdown:

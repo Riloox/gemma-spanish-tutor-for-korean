@@ -1,4 +1,4 @@
-"""GRPO round 2, start to finish. Started by grpo-round2.bat; safe to stop and re-run (every stage resumes).
+"""GRPO round 2, start to finish. Started by scripts/windows/grpo-round2.bat; safe to stop and re-run (every stage resumes).
 
   1. filter   ask the round-1 model every RL prompt 4 times, keep the ones it doesn't always ace
               (data.filter_rl -> data/out/rl_prompts_hard.jsonl)
@@ -238,9 +238,9 @@ def main():
         stage("compare", do_compare)
         log(f"=== ALL DONE in {(time.time() - start) / 3600:.1f} h. Read outputs/grpo2/summary.md")
     except KeyboardInterrupt:
-        log("stopped by you (Ctrl+C). Run grpo-round2.bat again to resume.")
+        log("stopped by you (Ctrl+C). Run scripts/windows/grpo-round2.bat again to resume.")
     except Exception as e:
-        log(f"FAILED: {e}. Run grpo-round2.bat again to resume from where it stopped.")
+        log(f"FAILED: {e}. Run scripts/windows/grpo-round2.bat again to resume from where it stopped.")
         raise SystemExit(1)
     finally:
         if args.shutdown:

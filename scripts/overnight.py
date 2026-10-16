@@ -1,4 +1,4 @@
-"""Overnight job for step 2c. Started by overnight.bat; safe to re-run (every stage resumes).
+"""Overnight job for step 2c. Started by scripts/windows/overnight.bat; safe to re-run (every stage resumes).
 
   1. keep Windows awake while this runs
   2. make sure Ollama is running and the teacher model is downloaded
@@ -107,9 +107,9 @@ def main():
         run([sys.executable, "-m", "data.build_explanations", "--stage", "all"])
         log(f"ALL DONE in {(time.time() - start) / 3600:.1f} h")
     except KeyboardInterrupt:
-        log("stopped by you (Ctrl+C). Run overnight.bat again to resume.")
+        log("stopped by you (Ctrl+C). Run scripts/windows/overnight.bat again to resume.")
     except Exception as e:
-        log(f"FAILED: {e}. Run overnight.bat again to resume from where it stopped.")
+        log(f"FAILED: {e}. Run scripts/windows/overnight.bat again to resume from where it stopped.")
         raise SystemExit(1)
 
 
