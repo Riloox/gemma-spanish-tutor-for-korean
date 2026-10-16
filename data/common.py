@@ -72,10 +72,14 @@ def _norm(s):
 
 
 def eval_sentences():
-    """Every quoted Spanish sentence in the dev eval and the held-out test set, normalized."""
+    """Every quoted Spanish sentence in the dev eval and the held-out test sets, normalized.
+    test_set_v4.jsonl is round 4's larger test set (data/build_test_v4.py); it only exists once built."""
     found = set()
-    for name in ("eval_set.jsonl", "test_set.jsonl"):
-        for line in (ROOT / "eval" / name).read_text(encoding="utf-8").splitlines():
+    for name in ("eval_set.jsonl", "test_set.jsonl", "test_set_v4.jsonl"):
+        path = ROOT / "eval" / name
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 for q in re.findall(r'"([^"]+)"', json.loads(line)["prompt"]):
                     found.add(_norm(q))

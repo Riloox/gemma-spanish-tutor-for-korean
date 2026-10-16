@@ -19,6 +19,8 @@ Resumable: every graded prompt is appended to rl_difficulty.jsonl, and a re-run 
 import argparse
 import json
 import sys
+import time
+import urllib.error
 import urllib.request
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -29,22 +31,42 @@ from data.common import OUT_DIR, eval_sentences, is_contaminated, write_jsonl
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "eval"))
 from run_eval import contains_phrase, normalize  # noqa: E402
 
-from train.rewards import grade_correction  # noqa: E402
+from train.rewards import grade_correction, grade_rewrite  # noqa: E402
 
 PROMPTS = OUT_DIR / "rl_prompts.jsonl"
 SCORES = OUT_DIR / "rl_difficulty.jsonl"
 HARD = OUT_DIR / "rl_prompts_hard.jsonl"
+RETRIES = 8
 
 
-def sample(host, model, messages, max_tokens):
+def sample(host, model, messages, max_tokens, temperature=1.0, full=False):
+    """One sampled answer; full=True returns Ollama's whole response (eval_count, done_reason) instead of the text."""
     body = {"model": model, "messages": messages, "stream": False, "think": False,
-            "options": {"temperature": 1.0, "num_ctx": 4096, "num_predict": max_tokens}}
+            "options": {"temperature": temperature, "num_ctx": 4096, "num_predict": max_tokens}}
     req = urllib.request.Request(f"{host}/api/chat", json.dumps(body).encode(), {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=600) as r:
-        return json.loads(r.read())["message"]["content"]
+    # Ollama sometimes answers 500 (or drops the connection) mid-run, e.g. when a runner restarts under
+    # VRAM pressure. Back off and retry (5s, 10s, ... capped at 2 min, ~10 min in total) before giving up.
+    for attempt in range(RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=600) as r:
+                data = json.loads(r.read())
+                return data if full else data["message"]["content"]
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or attempt == RETRIES:
+                raise
+            err = f"HTTP {e.code}"
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            if attempt == RETRIES:
+                raise
+            err = repr(e)
+        wait = min(5 * 2 ** attempt, 120)
+        print(f"  sample failed ({err}); retry {attempt + 1}/{RETRIES} in {wait}s", flush=True)
+        time.sleep(wait)
 
 
-def grade(row, answer):
+def grade(row, answer, rewrite=False):
+    if row["task"] == "correction" and rewrite:
+        return grade_rewrite(answer, row["sentence"], row["correct"], row["ok"])
     if row["task"] == "correction":
         return grade_correction(answer, row["sentence"], row["correct"], row["right"], row["ok"])
     return float(contains_phrase(normalize(answer), row["form"]))
@@ -56,18 +78,22 @@ def main():
     ap.add_argument("--k", type=int, default=4, help="answers sampled per prompt")
     ap.add_argument("--workers", type=int, default=4, help="parallel requests (Ollama queues what it can't run)")
     ap.add_argument("--max-tokens", type=int, default=512, help="same limit as training's --max-completion")
-    ap.add_argument("--host", default="http://localhost:11434")
+    ap.add_argument("--host", default="http://127.0.0.1:11434")
+    ap.add_argument("--prompts", type=Path, default=PROMPTS)
+    ap.add_argument("--scores", type=Path, default=SCORES, help="resume file; rows are indexes into --prompts")
+    ap.add_argument("--hard", type=Path, default=HARD, help="output: the prompts not aced every time")
+    ap.add_argument("--rewrite", action="store_true", help="round 4: grade by the rewrite-first reward")
     args = ap.parse_args()
 
-    rows = [json.loads(line) for line in PROMPTS.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = [json.loads(line) for line in args.prompts.read_text(encoding="utf-8").splitlines() if line.strip()]
     banned = eval_sentences()
     keep = [i for i, r in enumerate(rows) if not (r["task"] == "correction" and
                                                    (is_contaminated(r["sentence"], banned) or is_contaminated(r["correct"], banned)))]
     print(f"{len(rows)} prompts, {len(rows) - len(keep)} dropped as dev/test sentences")
 
     done = {}
-    if SCORES.exists():
-        for line in SCORES.read_text(encoding="utf-8").splitlines():
+    if args.scores.exists():
+        for line in args.scores.read_text(encoding="utf-8").splitlines():
             d = json.loads(line)
             if d["model"] == args.model and len(d["rewards"]) == args.k:
                 done[d["index"]] = d["rewards"]
@@ -75,9 +101,10 @@ def main():
     print(f"{len(done)} already graded, {len(todo)} to go ({args.k} answers each, model {args.model})")
 
     def work(i):
-        return i, [grade(rows[i], sample(args.host, args.model, rows[i]["prompt"], args.max_tokens)) for _ in range(args.k)]
+        return i, [grade(rows[i], sample(args.host, args.model, rows[i]["prompt"], args.max_tokens), args.rewrite)
+                   for _ in range(args.k)]
 
-    with ThreadPoolExecutor(args.workers) as pool, open(SCORES, "a", encoding="utf-8") as f:
+    with ThreadPoolExecutor(args.workers) as pool, open(args.scores, "a", encoding="utf-8") as f:
         for n, (i, rewards) in enumerate(pool.map(work, todo), 1):
             done[i] = rewards
             f.write(json.dumps({"index": i, "model": args.model, "rewards": rewards}) + "\n")
@@ -103,7 +130,7 @@ def main():
     for c in stats.values():
         total.update(c)
     print(f"{'ALL':24} {total['aced']:5} {total['mixed']:6} {total['failed']:7}")
-    write_jsonl(hard, HARD)
+    write_jsonl(hard, args.hard)
 
 
 if __name__ == "__main__":

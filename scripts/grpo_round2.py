@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "eval"))
 from compare import compare  # noqa: E402
 
-HOST = "http://localhost:11434"
+HOST = "http://127.0.0.1:11434"
 LOG = ROOT / "logs" / "grpo-round2.log"
 OUT = ROOT / "outputs" / "grpo2"
 RESULTS = ROOT / "results"

@@ -25,7 +25,7 @@ from data.common import OUT_DIR, SYSTEM_PROMPT, example, write_jsonl
 from data.topics import PERSONAS, TOPICS
 
 TEACHER = "gemma4:26b"
-HOST = "http://localhost:11434"
+HOST = "http://127.0.0.1:11434"  # not localhost: on Windows that tries IPv6 first and every request waits ~2 s
 QUESTIONS_PER_TOPIC = 8
 RAW_Q = OUT_DIR / "raw_questions.jsonl"
 RAW_A = OUT_DIR / "raw_answers.jsonl"

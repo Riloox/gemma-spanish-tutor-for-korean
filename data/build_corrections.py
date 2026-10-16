@@ -679,9 +679,10 @@ def check_lines(item, used, ok):
     return f"**확인할 점:** {item.rule_short}\n**쓴 형태:** '{used}' {'✓' if ok else '✗'}\n\n"
 
 
-def render_wrong(rng, item, pool):
+def render_wrong(rng, item, pool, user=None):
+    """user: the learner's message; default is a random PROMPTS wrapper (teacher items bring their own)."""
     return example(
-        rng.choice(PROMPTS).format(s=item.incorrect),
+        user or rng.choice(PROMPTS).format(s=item.incorrect),
         f"{check_lines(item, item.wrong, False)}{rng.choice(OPENERS)}**고친 문장:** {item.correct}\n({item.ko})\n\n"
         f"**무엇이 틀렸나요?**\n'{item.wrong}' → '{item.right}'\n\n"
         f"**왜 그런가요?**\n{item.rule}\n\n"
@@ -690,12 +691,45 @@ def render_wrong(rng, item, pool):
     )
 
 
-def render_ok(rng, item):
+def render_ok(rng, item, user=None):
     return example(
-        rng.choice(PROMPTS).format(s=item.correct),
+        user or rng.choice(PROMPTS).format(s=item.correct),
         f"{check_lines(item, item.right, True)}네, 맞아요! 👍 틀린 곳이 없어요. 자연스러운 문장이에요.\n\n"
         f"{item.correct}\n({item.ko})\n\n잘한 점: {item.ok_note}",
         kind="corr_ok", error_type=item.type,
+    )
+
+
+# ---------------------------------------------------------------- round 4: rewrite first, then compare
+
+def rewrite_lines(rewritten, changes):
+    """Rewrite first, compare after: write the whole sentence the way it should be, then list what changed.
+
+    Check-first (check_lines) made the model name *one* spot before reading the sentence; when the error was
+    elsewhere it checked the wrong word, marked it ✓ and praised the sentence. Rewriting the whole sentence is
+    what the stock model already does well, and the verdict then follows from a diff, not a guess.
+    """
+    diff = ", ".join(f"'{a}' → '{b}'" for a, b in changes) or "없음"
+    return f"**다시 써 보면:** {rewritten}\n**바뀐 곳:** {diff}\n\n"
+
+
+def render_wrong_v4(rng, item, pool, user=None):
+    return example(
+        user or rng.choice(PROMPTS).format(s=item.incorrect),
+        f"{rewrite_lines(item.correct, [(item.wrong, item.right)])}한 군데 고칠 곳이 있어요.\n\n"
+        f"**고친 문장:** {item.correct}\n({item.ko})\n\n"
+        f"**왜 그런가요?**\n{item.rule}\n\n"
+        f"**연습 문제**\n{exercise(rng, pool, item)}",
+        kind="corr_wrong", error_type=item.type, format="rewrite",
+    )
+
+
+def render_ok_v4(rng, item, user=None):
+    return example(
+        user or rng.choice(PROMPTS).format(s=item.correct),
+        f"{rewrite_lines(item.correct, [])}네, 맞아요! 👍 틀린 곳이 없어요.\n\n"
+        f"{item.correct}\n({item.ko})\n\n잘한 점: {item.ok_note}",
+        kind="corr_ok", error_type=item.type, format="rewrite",
     )
 
 

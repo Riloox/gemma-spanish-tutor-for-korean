@@ -12,16 +12,21 @@ Corrections are half wrong, half already correct, and each correct one is the tw
 earns about half the reward, so only looking at the word pays.
 
 Sentences come from the same generators as Step 2's correction data (correct by construction),
-minus anything in the eval set.
+minus anything in the eval set, plus (if built) the checked teacher items from data/build_teacher_items.py,
+which cover the sentence frames the generators don't.
 
     uv run python -m data.build_rl
 """
 
+import argparse
 import json
 import random
 import re
+from pathlib import Path
 
 from data.build_corrections import GENERATORS, PROMPTS
+from data.build_teacher_items import ITEMS as TEACHER_ITEMS
+from data.build_teacher_items import question
 from data.common import OUT_DIR, SYSTEM_PROMPT, eval_sentences, is_contaminated, write_jsonl
 
 SEED = 11
@@ -48,6 +53,14 @@ def correction_rows(rng):
                 rows.append({"prompt": prompt(rng.choice(PROMPTS).format(s=it.correct)),
                              "sentence": it.correct, "ok": True, **base})
         print(f"  {name:15} {len(clean):4} candidates")
+    teacher = [json.loads(l) for l in TEACHER_ITEMS.read_text(encoding="utf-8").splitlines()] if TEACHER_ITEMS.exists() else []
+    for x in teacher:  # already decontaminated and judged; every one gets its twin
+        base = {"task": "correction", "error_type": x["type"], "correct": x["correct"], "right": x["right"],
+                "wrong": x["wrong"]}
+        for sentence, ok in ((x["incorrect"], False), (x["correct"], True)):
+            user = question(x, sentence) or rng.choice(PROMPTS).format(s=sentence)
+            rows.append({"prompt": prompt(user), "sentence": sentence, "ok": ok, **base})
+    print(f"  teacher items   {len(teacher):4}")
     return rows
 
 
@@ -68,6 +81,10 @@ def conjugation_rows(rng, n):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", type=Path, default=OUT_DIR / "rl_prompts.jsonl",
+                    help="round 3 writes rl_prompts_v3.jsonl: rl_difficulty.jsonl indexes into the old file")
+    args = ap.parse_args()
     rng = random.Random(SEED)
     corr = correction_rows(rng)
     conj = conjugation_rows(rng, round(len(corr) * CONJ_SHARE / (1 - CONJ_SHARE)))
@@ -82,7 +99,7 @@ def main():
     rng.shuffle(rows)
     n_ok = sum(r["ok"] for r in rows)
     print(f"{len(corr)} correction prompts ({n_ok} already correct), {len(conj)} conjugation prompts")
-    write_jsonl(rows, OUT_DIR / "rl_prompts.jsonl")
+    write_jsonl(rows, args.out)
 
 
 if __name__ == "__main__":

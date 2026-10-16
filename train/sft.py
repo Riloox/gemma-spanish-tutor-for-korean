@@ -30,7 +30,8 @@ from trl import SFTConfig, SFTTrainer
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "out"
-FILES = ["sft_conjugation.jsonl", "sft_corrections.jsonl", "sft_explanations.jsonl"]
+FILES = ["sft_conjugation.jsonl", "sft_corrections.jsonl", "sft_explanations.jsonl",
+         "sft_teacher_corrections.jsonl"]  # v3: teacher-written items (data/build_teacher_items.py)
 BASE = "google/gemma-4-E2B-it"  # same model as Ollama's gemma4:e2b, the Step 1 winner
 VAL_FRACTION = 0.05
 
@@ -38,10 +39,10 @@ VAL_FRACTION = 0.05
 TARGET = r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)"
 
 
-def load_split(seed, limit=None):
+def load_split(seed, limit=None, files=FILES):
     """Prompt/completion pairs, split per kind so every kind shows up in validation."""
     by_kind = collections.defaultdict(list)
-    for name in FILES:
+    for name in files:
         for line in (DATA / name).read_text(encoding="utf-8").splitlines():
             if line.strip():
                 r = json.loads(line)
@@ -71,9 +72,10 @@ def main():
     ap.add_argument("--max-length", type=int, default=2048)
     ap.add_argument("--out", default=str(ROOT / "outputs" / "sft"))
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--files", nargs="+", default=FILES, help="SFT files in data/out (round 4 swaps the corrections)")
     args = ap.parse_args()
 
-    train_ds, val_ds = load_split(args.seed, limit=40 if args.smoke else None)
+    train_ds, val_ds = load_split(args.seed, limit=40 if args.smoke else None, files=args.files)
 
     tokenizer = AutoTokenizer.from_pretrained(BASE)
     model = AutoModelForMultimodalLM.from_pretrained(

@@ -51,6 +51,9 @@ def main():
     ap.add_argument("--save-steps", type=int, default=25)
     ap.add_argument("--save-limit", type=int, default=4, help="checkpoints kept; 0 keeps all")
     ap.add_argument("--resume", action="store_true", help="continue from the newest checkpoint in --out")
+    ap.add_argument("--praise-penalty", type=float, default=0.0, help="reward for calling a wrong sentence correct, negated")
+    ap.add_argument("--check-weight", type=float, default=0.0, help="weight of the check-first reward; 0 = off")
+    ap.add_argument("--rewrite", action="store_true", help="round 4: grade corrections by the rewrite-first reward")
     args = ap.parse_args()
 
     rows = [json.loads(line) for line in args.prompts.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -86,7 +89,7 @@ def main():
         learning_rate=args.lr,
         lr_scheduler_type="constant_with_warmup",
         warmup_steps=0.05,
-        reward_weights=[1.0, 1.0],
+        reward_weights=[1.0, 1.0] + ([args.check_weight] if args.check_weight else []),
         gradient_checkpointing=True,
         bf16=True,
         # Not the paged variant: paging moves optimizer state between GPU and RAM through the driver, and a
@@ -100,7 +103,8 @@ def main():
         seed=args.seed,
     )
 
-    trainer = GRPOTrainer(model=model, reward_funcs=make_rewards(tokenizer, args.max_completion),
+    trainer = GRPOTrainer(model=model, reward_funcs=make_rewards(tokenizer, args.max_completion, args.praise_penalty,
+                                                                 check=bool(args.check_weight), rewrite=args.rewrite),
                           args=config, train_dataset=ds, processing_class=tokenizer)
     # TRL casts a 4-bit model's trainable weights to bf16 (the QLoRA recipe). At lr 1e-5 most Adam steps are
     # smaller than bf16's spacing near the adapter's weights and round to nothing, so train them in fp32 again.

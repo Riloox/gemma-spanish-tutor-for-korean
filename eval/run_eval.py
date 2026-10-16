@@ -49,6 +49,9 @@ def chat(host, model, system, user, timeout=300):
     try:
         data = _post(f"{host}/api/chat", body, timeout)
     except urllib.error.HTTPError as e:
+        if e.code == 500 and "token repeat limit" in (msg := e.read().decode(errors="replace")):
+            # Ollama killed a looping answer: that's the model failing the item, not the eval crashing
+            return f"[ollama aborted: {msg}]", {"tokens": 0, "tok_per_s": 0.0}
         if e.code != 400:
             raise
         body.pop("think")  # some models reject the `think` field entirely
@@ -82,14 +85,21 @@ def contains_phrase(text, phrase):
 
 
 # For already-correct sentences (check values = [the learner's sentence]). Grades the *verdict*:
-#   - the answer says it's right: an affirmation in its first line, or "틀린/고칠 곳(부분·데)이 없어요" anywhere,
+#   - its own check block, if it opens with one ("쓴 형태: '…' ✗/✓"), doesn't flag the form;
+#     a rewrite-first block ("다시 써 보면: …" / "바뀐 곳: …", round 4) counts as a check block too;
+#   - the answer says it's right: an affirmation in its first line after that check block, or "틀린/고칠 곳(부분·데)이 없어요" anywhere,
 #     and no hedge like "거의 다 맞았어요 / 고쳐 볼게요" in the first line;
-#   - nothing is actually changed: every "고친 문장:" line is the learner's sentence, and no 'x' → 'y' with x != y.
+#   - nothing is actually changed: every "고친 문장:" / "다시 써 보면:" line is the learner's sentence, and no 'x' → 'y'
+#     with x != y.
 # Filling the 4-part template with the unchanged sentence is fine; inventing a fix is not.
 AFFIRM = ["맞아요", "맞습니다", "맞는 문장", "맞고", "맞게 썼", "완벽", "자연스러운 문장", "자연스러워요"]
 NO_ERROR = re.compile(r"(틀린|고칠)\s*(곳|부분|데)[은이가]?\s*(하나도\s*|전혀\s*)?없")
 DENY = ["거의", "고쳐", "고치면", "틀렸", "안 맞", "맞지 않", "어색"]
 FIX_LINE = re.compile(r"고친 (?:문장|글)\s*:\s*(.+)")
+CHECK_LINE = re.compile(r"(확인할 점|쓴 형태|다시 써 보면|바뀐 곳)\s*:")
+REWRITE_LINE = re.compile(r"다시 써 보면\s*:\s*(.+)")
+TRAILING_GLOSS = re.compile(r"\s*\([^()]*[가-힣][^()]*\)\s*$")  # "Tengo una mano. (저는 손이…)" -> the Spanish only
+USED_LINE = re.compile(r"쓴 형태\s*:(.*)")
 ARROW = re.compile(r"'([^'\n]+)'\s*(?:→|\$?\\rightarrow\$?)\s*'([^'\n]+)'")
 
 
@@ -97,13 +107,35 @@ def sentence_key(s):
     return re.sub(r"[\"'“”«».,!?¿¡\s]", "", normalize(s))
 
 
-def says_correct(answer, sentence):
-    first = normalize(answer.strip().split("\n")[0])
-    affirms = any(a in first for a in AFFIRM) or NO_ERROR.search(normalize(answer))
-    if not affirms or any(d in first for d in DENY):
-        return False
+def verdict_line(plain):
+    """The first line after the check block ("확인할 점: …" / "쓴 형태: '…' ✓", or round 4's "다시 써 보면: …" /
+    "바뀐 곳: …") that check-first and rewrite-first answers open with."""
+    for line in plain.strip().split("\n"):
+        if line.strip() and not CHECK_LINE.match(line.strip()):
+            return line
+    return ""
+
+
+def rewrites(plain):
+    """The sentences on "다시 써 보면:" lines, Korean gloss dropped."""
+    return [TRAILING_GLOSS.sub("", r).strip() for r in REWRITE_LINE.findall(plain)]
+
+
+def affirms(answer):
+    """The verdict says the sentence is right, whatever the answer then changes in it."""
     plain = answer.replace("*", "")
-    if any(sentence_key(f) != sentence_key(sentence) for f in FIX_LINE.findall(plain)):
+    if any("✗" in m for m in USED_LINE.findall(plain)):
+        return False  # its own check flagged the form, whatever the verdict line says
+    first = normalize(verdict_line(plain))
+    yes = any(a in first for a in AFFIRM) or NO_ERROR.search(normalize(answer))
+    return bool(yes) and not any(d in first for d in DENY)
+
+
+def says_correct(answer, sentence):
+    plain = answer.replace("*", "")
+    if not affirms(answer):
+        return False
+    if any(sentence_key(f) != sentence_key(sentence) for f in FIX_LINE.findall(plain) + rewrites(plain)):
         return False
     return all(a.strip() == b.strip() for a, b in ARROW.findall(plain))
 
@@ -146,7 +178,7 @@ def main():
     p.add_argument("--rescore", type=Path, help="re-grade saved answers in a results/<timestamp> dir; no model calls")
     p.add_argument("--eval", default=ROOT / "eval" / "eval_set.jsonl", type=Path)
     p.add_argument("--system", default=ROOT / "prompts" / "tutor_system.txt", type=Path)
-    p.add_argument("--host", default="http://localhost:11434")
+    p.add_argument("--host", default="http://127.0.0.1:11434")
     p.add_argument("--only", help="run only ids starting with this prefix, e.g. conj")
     p.add_argument("--out", type=Path, help="results directory (default: results/<timestamp>)")
     args = p.parse_args()
