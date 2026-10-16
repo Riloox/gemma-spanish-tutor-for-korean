@@ -8,3 +8,4 @@ outputs/
 data/out/
 *.log
 logs/
+docs/
