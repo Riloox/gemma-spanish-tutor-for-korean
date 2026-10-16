@@ -1,4 +1,4 @@
-"""Seed topics for teacher-written explanations (step 2c), keyed by pain point (docs/02-model-spec.md).
+"""Seed topics for teacher-written explanations (step 2c), keyed by pain point.
 
 These cover what 2a/2b can't: open-ended "why/how" questions. The teacher expands each topic into
 several realistic learner questions, then answers them.

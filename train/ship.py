@@ -1,7 +1,6 @@
 """Step 4 in one command: adapter -> merged checkpoint -> bf16 GGUF -> Q4_K_M GGUF -> Ollama model.
 
-Each stage is the command from docs/06, run as a subprocess so a failure stops the chain
-with the tool's own error message. See docs/06 for why each stage exists.
+Each stage runs as a subprocess so a failure stops the chain with the tool's own error message.
 
     uv run python -m train.ship                                    # outputs/sft/final -> gemma4-tutor
     uv run python -m train.ship --adapter outputs/sft-v2/final --name gemma4-tutor-v2

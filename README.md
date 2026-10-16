@@ -6,8 +6,7 @@ A 2B Spanish tutor for Korean speakers, fine-tuned from Gemma 4 E2B on one lapto
 model scores **177/208 vs 123/208** for the stock `gemma4:e2b` (McNemar p < 0.001, 95% interval +18% to +34%).
 With the app system prompt it scores 182/208.
 
-This is a learning project and a prototype, not a product. Every step has a doc that explains the concepts
-before the code, including the rounds that didn't work.
+This is a learning project and a prototype, not a product. The rounds that didn't work are part of the record.
 
 ## What it does
 
@@ -53,17 +52,14 @@ kept away from every training sentence, and scored on the stock model before Rou
 
 ## How it was built
 
-| Step | What | Doc |
-|---|---|---|
-| 1 | Baseline: measured 5 local models, picked `gemma4:e2b` (fast, best per size) | [03](docs/03-step1-baseline.md) |
-| 2 | Training data: conjugations and corrections that are correct by construction, explanations distilled from `gemma4:26b` and hand-reviewed | [04](docs/04-step2-training-data.md) |
-| 3 | SFT with QLoRA on 12 GB VRAM | [05](docs/05-step3-sft.md) |
-| 4 | Merge → GGUF → Q4_K_M → Ollama; first evals (SFT taught the format but started praising wrong sentences) | [06](docs/06-step4-ollama.md) |
-| 5 | GRPO with automatic verifiers as rewards; hard-prompt filtering; significance tests | [07](docs/07-step5-grpo.md) |
-| 6 | Rounds 3–4: check-first vs rewrite-first, teacher-written items, a new frozen test set, self-distilled SFT | [08](docs/08-rounds-3-4.md) |
-
-New to the terms? Start with [docs/01-how-llms-are-made.md](docs/01-how-llms-are-made.md). The target
-behavior is in [docs/02-model-spec.md](docs/02-model-spec.md).
+| Step | What |
+|---|---|
+| 1 | Baseline: measured 5 local models, picked `gemma4:e2b` (fast, best per size) |
+| 2 | Training data: conjugations and corrections that are correct by construction, explanations distilled from `gemma4:26b` and hand-reviewed |
+| 3 | SFT with QLoRA on 12 GB VRAM |
+| 4 | Merge → GGUF → Q4_K_M → Ollama; first evals (SFT taught the format but started praising wrong sentences) |
+| 5 | GRPO with automatic verifiers as rewards; hard-prompt filtering; significance tests |
+| 6 | Rounds 3–4: check-first vs rewrite-first, teacher-written items, a new frozen test set, self-distilled SFT |
 
 ## Limitations
 
@@ -88,10 +84,10 @@ The repo is a research log, not a one-command build. Each round's pipeline reads
 answers of the rounds before it, so a from-scratch run goes in order. Each pipeline is resumable, and most
 take an overnight run:
 
-1. Step 2 data: `data/build_conjugation.py`, `data/build_corrections.py`, `scripts/overnight.py` ([04](docs/04-step2-training-data.md))
-2. SFT and ship: `train/sft.py`, `train/ship.py` ([05](docs/05-step3-sft.md), [06](docs/06-step4-ollama.md))
-3. GRPO round 1, then `scripts/grpo_round2.py` ([07](docs/07-step5-grpo.md))
-4. `scripts/round3.py`, then `scripts/round4.py` ([08](docs/08-rounds-3-4.md))
+1. Step 2 data: `data/build_conjugation.py`, `data/build_corrections.py`, `scripts/overnight.py`
+2. SFT and ship: `train/sft.py`, `train/ship.py`
+3. GRPO round 1, then `scripts/grpo_round2.py`
+4. `scripts/round3.py`, then `scripts/round4.py`
 
 Then build the app model and talk to it:
 
@@ -109,7 +105,6 @@ python eval/run_eval.py --models gemma4:e2b spanish-tutor --eval eval/test_set_v
 ## Layout
 
 ```
-docs/                     concept explainers + one doc per step
 prompts/tutor_system.txt  system prompt used in training and eval
 prompts/app_system.txt    the same prompt + rules for the planned voice/3D-character app
 eval/
